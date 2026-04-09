@@ -115,6 +115,7 @@ inkstitch_attribs = [
     'cross_stitch_method',
     'max_cross_stitch_length_mm',
     'cross_offset_mm',
+    'cross_rotation',
     'cross_thread_count',
     'canvas_grid_origin',
     # stroke
@@ -193,7 +194,10 @@ inkstitch_attribs = [
     'grid_size',
     # sew stack
     'sew_stack_only',
-    'sew_stack'
+    'sew_stack',
+    # pattern
+    'pattern_interval',
+    'pattern_offset'
 ]
 for attrib in inkstitch_attribs:
     INKSTITCH_ATTRIBS[attrib] = inkex.addNS(attrib, 'inkstitch')

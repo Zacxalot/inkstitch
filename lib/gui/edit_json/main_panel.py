@@ -320,6 +320,7 @@ class LetteringEditJsonPanel(wx.Panel):
         self.font_meta['default_variant'] = self.font.json_default_variant
         self.font_meta['default_glyph'] = self.font.default_glyph
         self.font_meta['auto_satin'] = self.font.auto_satin
+        self.font_meta['scale_cross_stitch_pattern'] = self.font.scale_cross_stitch_pattern
         self.font_meta['letter_case'] = self.font.letter_case
         self.font_meta['reversible'] = self.font.reversible
         self.font_meta['sortable'] = self.font.sortable
@@ -347,6 +348,7 @@ class LetteringEditJsonPanel(wx.Panel):
         self.settings_panel.font_info.original_font_url.ChangeValue(self.font.original_font_url)
         self.settings_panel.font_settings.default_glyph.ChangeValue(self.font.default_glyph)
         self.settings_panel.font_settings.auto_satin.SetValue(self.font.auto_satin)
+        self.settings_panel.font_settings.scale_cross_stitch_pattern.SetValue(self.font.scale_cross_stitch_pattern)
         selection = list(LETTER_CASE.keys())[list(LETTER_CASE.values()).index(self.font.letter_case)]
         self.settings_panel.font_settings.letter_case.SetSelection(selection)
         self.settings_panel.font_settings.reversible.SetValue(self.font.reversible)
@@ -378,9 +380,9 @@ class LetteringEditJsonPanel(wx.Panel):
         # Add the rows
         kerning_list.ClearAll()
         # Add some columns
-        kerning_list.AppendColumn("Kerning pair", width=wx.LIST_AUTOSIZE_USEHEADER)
-        kerning_list.AppendColumn("Current kerning", width=wx.LIST_AUTOSIZE_USEHEADER)
-        kerning_list.AppendColumn("New kerning", width=wx.LIST_AUTOSIZE_USEHEADER)
+        kerning_list.AppendColumn("Kerning pair")
+        kerning_list.AppendColumn("Current kerning")
+        kerning_list.AppendColumn("New kerning")
         for kerning_pair in self.kerning_combinations:
             if filter_value is not None and filter_value.strip() not in kerning_pair:
                 continue
@@ -391,6 +393,9 @@ class LetteringEditJsonPanel(wx.Panel):
             # kerning_list.SetItem(index, 0, kerning_pair)
             kerning_list.SetItem(index, 1, str(self.kerning_pairs.get(kerning_pair, 0.0)))
         if kerning_list.GetItemCount() != 0:
+            # Set column widht
+            self._set_column_width(kerning_list, 3)
+            # Set selection and focus
             kerning_list.Select(0)
             kerning_list.Focus(0)
 
@@ -399,10 +404,10 @@ class LetteringEditJsonPanel(wx.Panel):
         # Add the rows
         glyph_list.ClearAll()
         # Add some columns
-        glyph_list.AppendColumn("Use default", width=wx.LIST_AUTOSIZE_USEHEADER)
-        glyph_list.AppendColumn("Glyph", width=wx.LIST_AUTOSIZE_USEHEADER)
-        glyph_list.AppendColumn("Current horizontal advance", width=wx.LIST_AUTOSIZE_USEHEADER)
-        glyph_list.AppendColumn("New horizontal advance", width=wx.LIST_AUTOSIZE_USEHEADER)
+        glyph_list.AppendColumn("Use default")
+        glyph_list.AppendColumn("Glyph")
+        glyph_list.AppendColumn("Current horizontal advance")
+        glyph_list.AppendColumn("New horizontal advance")
         horiz_adv_x_default = self.font.horiz_adv_x_default
         for glyph in self.glyphs:
             index = glyph_list.InsertItem(glyph_list.GetItemCount(), '')
@@ -412,8 +417,15 @@ class LetteringEditJsonPanel(wx.Panel):
             glyph_list.SetItem(index, 1, glyph)
             glyph_list.SetItem(index, 2, str(horiz_adv))
         if glyph_list.GetItemCount() != 0:
+            self._set_column_width(glyph_list, 4)
+            # Set selectio and focus
             glyph_list.Select(0)
             glyph_list.Focus(0)
+
+    def _set_column_width(self, list_to_adapt, column_count):
+        for i in range(column_count):
+            # We use the header width as this is always the longest item
+            list_to_adapt.SetColumnWidth(i, wx.LIST_AUTOSIZE_USEHEADER)
 
     def writability_warning(self):
         json_file = path.join(self.font.path, 'font.json')
@@ -441,7 +453,7 @@ class LetteringEditJsonPanel(wx.Panel):
             self.cancel()
             return
 
-        with open(json_file, 'r') as font_data:
+        with open(json_file, 'r', encoding="utf8") as font_data:
             data = json.load(font_data)
 
         for key, val in self.font_meta.items():

@@ -18,10 +18,11 @@ from .. import tiles
 from ..i18n import _
 from ..marker import get_marker_elements
 from ..stitch_plan import StitchGroup
-from ..stitches import (auto_fill, circular_fill, contour_fill, cross_stitch, guided_fill,
-                        legacy_fill, linear_gradient_fill, meander_fill,
-                        tartan_fill)
+from ..stitches import (auto_fill, circular_fill, contour_fill, cross_stitch,
+                        guided_fill, legacy_fill, linear_gradient_fill,
+                        meander_fill, tartan_fill)
 from ..stitches.linear_gradient_fill import gradient_angle
+from ..stitches.utils.cross_stitch import CrossGeometries
 from ..svg import PIXELS_PER_MM
 from ..svg.tags import INKSCAPE_LABEL
 from ..tartan.utils import get_tartan_settings, get_tartan_stripes
@@ -128,8 +129,20 @@ class DefaultTartanStripeWarning(ValidationWarning):
     name = _("No customized pattern")
     description = _("Tartan fill: Using default pattern")
     steps_to_solve = [
-        _('Go to Extensions > Ink/Stitch > Fill Tools > Tartan and adjust stripe settings:'),
+        _('Go to Extensions > Ink/Stitch > Tools: Fill > Tartan and adjust stripe settings:'),
         _('* Customize your pattern')
+    ]
+
+
+class CrossPatternCoverageWarning(ValidationWarning):
+    name = _("Cross stitch: shape too small")
+    description = _('This shape is too small to fit a cross. Please adapt params and/or shape.')
+    steps_to_solve = [
+        _('* Change the pattern size'),
+        _('* Or adapt the grid offset or move the shape'),
+        _('* Or increase the expand value or increase shape size'),
+        _('* Or decrease the fill coverage value'),
+        _('* Or use Extensions > Ink/Stitch > Tools: Fill > Cross Stitch Helper, adapt settings and pixelate the shape')
     ]
 
 
@@ -742,7 +755,12 @@ class FillStitch(EmbroideryElement):
         ParamOption('half_cross_flipped', _("Half Cross Flipped")),
         ParamOption('upright_cross', _("Upright Cross")),
         ParamOption('upright_cross_flipped', _("Upright Cross Flipped")),
-        ParamOption('double_cross', _("Double Cross"))
+        ParamOption('dense_upright_cross', _("Dense Upright Cross")),
+        ParamOption('dense_upright_cross_flipped', _("Dense Upright Cross Flipped")),
+        ParamOption('double_cross', _("Double Cross")),
+        ParamOption('double_cross_flipped', _("Double Cross Flipped")),
+        ParamOption('smyrna_cross', _("Smyrna Cross")),
+        ParamOption('smyrna_cross_flipped', _("Smyrna Cross Flipped"))
     ]
 
     @property
@@ -820,6 +838,21 @@ class FillStitch(EmbroideryElement):
 
     @property
     @param(
+        'cross_rotation',
+        _('Grid Rotation'),
+        tooltip=_('Rotates the cross stitch grid by the given value.'),
+        select_items=[('fill_method', 'cross_stitch')],
+        unit=_('deg'),
+        type='float',
+        default=0,
+        sort_index=14
+    )
+    @cache
+    def cross_rotation(self):
+        return self.get_float_param("cross_rotation", 0)
+
+    @property
+    @param(
         'fill_coverage',
         _("Fill coverage"),
         tooltip=_("Percentage of overlap for each cross with the fill area"),
@@ -827,7 +860,7 @@ class FillStitch(EmbroideryElement):
         default="50",
         unit='%',
         select_items=[('fill_method', 'cross_stitch')],
-        sort_index=14
+        sort_index=15
     )
     def fill_coverage(self):
         return max(1, self.get_int_param("fill_coverage", 50))
@@ -1250,13 +1283,7 @@ class FillStitch(EmbroideryElement):
         return [stitch_group]
 
     def do_cross_stitch(self, previous_stitch_group, start, end):
-        fill_shapes = ensure_multi_polygon(make_valid(self.fill_shape(self.shape)))
-        fill_shapes = list(fill_shapes.geoms)
-
-        if start:
-            fill_shapes.sort(key=lambda shape: shape.distance(shgeo.Point(start)))
-        else:
-            fill_shapes.sort(key=lambda shape: shape.bounds[0])
+        fill_shapes = self._prepare_cross_stitch_shape(start)
         final_end = end
 
         stitch_groups = []
@@ -1268,16 +1295,27 @@ class FillStitch(EmbroideryElement):
                 end = final_end
             stitch_lists = cross_stitch(self, shape, start, end)
             for stitch_list in stitch_lists:
-                stitch_group = StitchGroup(
-                    color=self.color,
-                    tags=("cross_stitch"),
-                    stitches=stitch_list,
-                    force_lock_stitches=self.force_lock_stitches,
-                    lock_stitches=self.lock_stitches
-                )
-                previous_stitch_group = stitch_group
-                stitch_groups.append(stitch_group)
+                for cycle in stitch_list:
+                    stitch_group = StitchGroup(
+                        color=self.color,
+                        tags=("cross_stitch"),
+                        stitches=cycle,
+                        force_lock_stitches=self.force_lock_stitches,
+                        lock_stitches=self.lock_stitches
+                    )
+                    previous_stitch_group = stitch_group
+                    stitch_groups.append(stitch_group)
         return stitch_groups
+
+    def _prepare_cross_stitch_shape(self, start):
+        fill_shapes = ensure_multi_polygon(make_valid(self.fill_shape(self.shape)))
+        fill_shapes = list(fill_shapes.geoms)
+
+        if start:
+            fill_shapes.sort(key=lambda shape: shape.distance(shgeo.Point(start)))
+        else:
+            fill_shapes.sort(key=lambda shape: shape.bounds[0])
+        return fill_shapes
 
     def do_circular_fill(self, shape, starting_point, ending_point):
         # get target position
@@ -1381,6 +1419,16 @@ class FillStitch(EmbroideryElement):
                 yield NoTartanStripeWarning(self.shape.representative_point())
             if not self.node.get('inkstitch:tartan', ''):
                 yield DefaultTartanStripeWarning(self.shape.representative_point())
+
+        # cross stitch
+        if self.fill_method == 'cross_stitch':
+            shapes = self._prepare_cross_stitch_shape(None)
+            for shape in shapes:
+                crosses = CrossGeometries(
+                    shape, self.pattern_size, self.fill_coverage, 'simple_cross', self.cross_offset, self.canvas_grid_origin, self.cross_thread_count
+                )
+                if len(crosses.boxes) == 0:
+                    yield CrossPatternCoverageWarning(shape.representative_point())
 
         for warning in super(FillStitch, self).validation_warnings():
             yield warning

@@ -15,7 +15,6 @@ from ..marker import get_marker_elements
 from ..stitch_plan import StitchGroup
 from ..stitches.ripple_stitch import ripple_stitch
 from ..stitches.running_stitch import bean_stitch, running_stitch, zigzag_stitch
-from ..svg import PIXELS_PER_MM
 from ..threads import ThreadColor
 from ..utils import Point, cache
 from ..utils.param import ParamOption
@@ -38,7 +37,9 @@ class TooNarrowSatinWarning(ValidationWarning):
     description = _("This element renders as running stitch while it has a satin column parameter.")
     steps_to_solve = [
         _("* Increase stroke width."),
-        _("Ink/Stitch will not register elements with a stroke width underneath 0.3 mm as satin, but it is recommended to stay above 1mm."),
+        _("Wether or not a a stroke can be rendered as a satin, depends on the stroke width and the preference value for the minimum satin stroke "
+          "width. The stroke width has to be wider than the preference setting, otherwise this element will be treated as a running stitch. To not "
+          "produce hard stitches, it is recommended to only use satins wider than 1mm."),
     ]
 
 
@@ -988,7 +989,7 @@ class Stroke(EmbroideryElement):
 
     def validation_warnings(self):
         # satin column warning
-        if self.get_boolean_param("satin_column", False) and self.stroke_width <= 0.3 * PIXELS_PER_MM:
+        if self.get_boolean_param("satin_column", False) and self.stroke_width <= self.satin_threshold:
             yield TooNarrowSatinWarning(self._representative_point())
         # ripple stitch warnings
         if self.stroke_method == 1:

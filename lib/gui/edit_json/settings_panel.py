@@ -4,6 +4,7 @@
 # Licensed under the GNU GPL version 3.0 or later.  See the file LICENSE for details.
 
 import wx
+from wx.lib.scrolledpanel import ScrolledPanel
 
 from ...i18n import _
 from ...lettering.categories import FONT_CATEGORIES
@@ -75,10 +76,11 @@ class SettingsPanel(wx.Panel):
         self.SetSizer(settings_sizer)
 
 
-class FontInfo(wx.Panel):
+class FontInfo(ScrolledPanel):
     def __init__(self, parent):
         self.parent = parent.GetParent().parent
-        wx.Panel.__init__(self, parent)
+        ScrolledPanel.__init__(self, parent)
+        self.SetupScrolling()
 
         sizer = wx.BoxSizer(wx.VERTICAL)
         grid_sizer = wx.FlexGridSizer(20, 2, 10, 10)
@@ -112,7 +114,7 @@ class FontInfo(wx.Panel):
         keywords_label = wx.StaticText(self, label=_("Keywords"))
         self.keywords = wx.ListBox(
             self,
-            size=wx.Size(10, 400),
+            size=wx.Size(10, 300),
             choices=[cat.name for cat in FONT_CATEGORIES],
             style=wx.CB_SORT | wx.LB_EXTENDED
         )
@@ -180,6 +182,13 @@ class FontSettings(wx.Panel):
             lambda event: self.parent.on_font_meta_value_changed("auto_satin", False, event)
         )
 
+        scale_cross_stitch_pattern_label = wx.StaticText(self, label=_("Scale cross stitch pattern"))
+        self.scale_cross_stitch_pattern = wx.CheckBox(self)
+        self.scale_cross_stitch_pattern.Bind(
+            wx.EVT_CHECKBOX,
+            lambda event: self.parent.on_font_meta_value_changed("scale_cross_stitch_pattern", False, event)
+        )
+
         letter_case_label = wx.StaticText(self, label=_("Letter case"))
         self.letter_case = wx.Choice(self, choices=[_("None"), _("Upper"), _("Lower")])
         self.letter_case.Bind(wx.EVT_CHOICE, self.parent.on_letter_case_change)
@@ -209,6 +218,8 @@ class FontSettings(wx.Panel):
             (self.default_glyph, 1, wx.ALL | wx.EXPAND, 0),
             (auto_satin_label, 0, wx.ALL, 0),
             (self.auto_satin, 1, wx.ALL | wx.EXPAND, 0),
+            (scale_cross_stitch_pattern_label, 0, wx.ALL, 0),
+            (self.scale_cross_stitch_pattern, 1, wx.ALL | wx.EXPAND, 0),
             (letter_case_label, 0, wx.ALL, 0),
             (self.letter_case, 1, wx.ALL | wx.EXPAND, 0),
             (reversible_label, 0, wx.ALL, 0),
