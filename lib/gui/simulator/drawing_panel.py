@@ -210,7 +210,7 @@ class DrawingPanel(wx.Panel):
         x, y = transform.TransformPoint(float(x), float(y))
         canvas.SetTransform(canvas.CreateMatrix())
         crosshair_radius = global_settings['simulator_crosshair_radius']
-        crosshair_pen = wx.Pen((128, 128, 128), width=global_settings['simulator_crosshair_thickness'])
+        crosshair_pen = wx.Pen(wx.Colour(global_settings['simulator_crosshair_colour']), width=global_settings['simulator_crosshair_thickness'])
         canvas.SetPen(crosshair_pen)
         canvas.StrokeLines(((x - crosshair_radius, y), (x + crosshair_radius, y)))
         canvas.StrokeLines(((x, y - crosshair_radius), (x, y + crosshair_radius)))
