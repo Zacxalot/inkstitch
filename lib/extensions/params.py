@@ -445,6 +445,35 @@ class ParamsTab(ScrolledPanel):
             box.Add(toggle_sizer, proportion=0, flag=wx.BOTTOM, border=10)
 
         for param in self.params:
+            if param.type == 'button':
+                # choice_widgets uses grouper(4), so contribute exactly 4 widgets per select_item
+                spacer1 = wx.StaticText(self, label="")
+                button = wx.Button(self, wx.ID_ANY, label=param.description)
+                dummy2 = wx.StaticText(self, label="")
+                dummy3 = wx.StaticText(self, label="")
+                nodes = self.nodes
+
+                def make_button_handler(p, n):
+                    def on_button(event):
+                        if p.button_handler:
+                            p.button_handler(n)
+                    return on_button
+
+                button.Bind(wx.EVT_BUTTON, make_button_handler(param, nodes))
+                if param.select_items is not None:
+                    spacer1.Hide()
+                    button.Hide()
+                    dummy2.Hide()
+                    dummy3.Hide()
+                    for item in param.select_items:
+                        self.choice_widgets[item].extend([spacer1, button, dummy2, dummy3])
+
+                self.settings_grid.Add(spacer1, flag=wx.ALIGN_CENTER_VERTICAL)
+                self.settings_grid.Add(button, flag=wx.ALIGN_CENTER_VERTICAL | wx.LEFT | wx.EXPAND | wx.TOP, border=5)
+                self.settings_grid.Add(dummy2, flag=wx.ALIGN_CENTER_VERTICAL)
+                self.settings_grid.Add(dummy3, flag=wx.ALIGN_CENTER_VERTICAL)
+                continue
+
             col1 = self.create_change_indicator(param.name)
             description = wx.StaticText(self, label=param.description)
             description.Wrap(150)

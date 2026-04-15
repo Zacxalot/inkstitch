@@ -121,6 +121,7 @@ inkstitch_attribs = [
     # stroke
     'stroke_method',
     'decorative_pattern_select',
+    'decorative_pattern_edit',
     'bean_stitch_repeats',
     'repeats',
     'running_stitch_length_mm',

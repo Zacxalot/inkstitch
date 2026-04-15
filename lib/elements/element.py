@@ -37,7 +37,8 @@ from ..utils.cache import (CacheKeyGenerator, get_stitch_plan_cache,
 
 class Param(object):
     def __init__(self, name, description, unit=None, values=[], type=None, group=None, inverse=False,
-                 options=[], default=None, tooltip=None, sort_index=0, select_items=None, enables=None):
+                 options=[], default=None, tooltip=None, sort_index=0, select_items=None, enables=None,
+                 button_handler=None):
         self.name = name
         self.description = description
         self.unit = unit
@@ -51,6 +52,7 @@ class Param(object):
         self.sort_index = sort_index
         self.select_items = select_items
         self.enables = enables
+        self.button_handler = button_handler
 
     def __repr__(self):
         return "Param(%s)" % vars(self)

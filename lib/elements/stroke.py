@@ -10,6 +10,7 @@ from math import ceil
 import shapely.geometry as shgeo
 from shapely.errors import GEOSException
 
+from ..gui.decorative_stitch_designer import open_decorative_designer
 from ..i18n import _
 from ..marker import get_marker_elements
 from ..stitch_plan import StitchGroup
@@ -110,6 +111,18 @@ class Stroke(EmbroideryElement):
         """Return the decorative pattern."""
         return self.get_param("decorative_pattern_select", "chevron_pattern")
 
+    @property
+    @param(
+        "decorative_pattern_edit",
+        _("Decorative stitch editor..."),
+        type="button",
+        select_items=[("stroke_method", "decorative_stitch")],
+        button_handler=lambda nodes: open_decorative_designer(),
+        sort_index=1,
+    )
+    def decorative_pattern_edit(self):
+        """Button to open the decorative stitch designer."""
+        return None
 
     @property
     @param(
