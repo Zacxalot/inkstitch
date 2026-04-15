@@ -134,6 +134,91 @@ class DesignerCanvas(wx.Panel):
         self.Refresh()
 
 
+REPEAT_COUNT = 4
+PREVIEW_MARGIN = 20
+
+
+class PatternPreviewPanel(wx.Panel):
+    """Live preview showing the pattern tiling across multiple repeats."""
+
+    def __init__(self, parent):
+        super().__init__(parent, style=wx.BORDER_SIMPLE)
+        self.SetMinSize((250, -1))
+        self.SetBackgroundColour(wx.WHITE)
+        self.points = []
+        self.Bind(wx.EVT_PAINT, self._on_paint)
+        self.Bind(wx.EVT_SIZE, self._on_size)
+
+    def _on_size(self, event):
+        self.Refresh()
+        event.Skip()
+
+    def set_points(self, points):
+        self.points = list(points)
+        self.Refresh()
+
+    def _on_paint(self, event):
+        dc = wx.PaintDC(self)
+        dc.Clear()
+
+        if len(self.points) < 2:
+            return
+
+        dx = self.points[-1][0] - self.points[0][0]
+        dy = self.points[-1][1] - self.points[0][1]
+
+        # Build all repeated points to determine bounding box
+        all_repeated = []
+        for r in range(REPEAT_COUNT):
+            for x, y in self.points:
+                all_repeated.append((x + r * dx, y + r * dy))
+
+        min_x = min(p[0] for p in all_repeated)
+        max_x = max(p[0] for p in all_repeated)
+        min_y = min(p[1] for p in all_repeated)
+        max_y = max(p[1] for p in all_repeated)
+
+        w, h = self.GetClientSize()
+        span_x = max_x - min_x or 1
+        span_y = max_y - min_y or 1
+        scale = min(
+            (w - 2 * PREVIEW_MARGIN) / span_x,
+            (h - 2 * PREVIEW_MARGIN) / span_y,
+        )
+
+        def to_screen(x, y):
+            sx = PREVIEW_MARGIN + (x - min_x) * scale
+            sy = PREVIEW_MARGIN + (y - min_y) * scale
+            return int(sx), int(sy)
+
+        # Draw each repeat
+        for r in range(REPEAT_COUNT):
+            shifted = [(x + r * dx, y + r * dy) for x, y in self.points]
+            screen = [to_screen(x, y) for x, y in shifted]
+
+            dc.SetPen(wx.Pen(wx.Colour(50, 50, 200), 1))
+            for i in range(len(screen) - 1):
+                dc.DrawLine(screen[i][0], screen[i][1], screen[i + 1][0], screen[i + 1][1])
+
+            # Interior points (not the anchors shared between repeats)
+            dc.SetBrush(wx.Brush(wx.Colour(50, 50, 200)))
+            dc.SetPen(wx.Pen(wx.Colour(20, 20, 140), 1))
+            for i in range(1, len(screen) - 1):
+                dc.DrawCircle(screen[i][0], screen[i][1], 3)
+
+            # Join node: last point of this repeat (= first of next)
+            jx, jy = screen[-1]
+            dc.SetBrush(wx.Brush(wx.Colour(60, 140, 60)))
+            dc.SetPen(wx.Pen(wx.Colour(30, 90, 30), 1))
+            dc.DrawCircle(jx, jy, 5)
+
+        # First anchor of the whole chain
+        fx, fy = to_screen(self.points[0][0], self.points[0][1])
+        dc.SetBrush(wx.Brush(wx.Colour(60, 140, 60)))
+        dc.SetPen(wx.Pen(wx.Colour(30, 90, 30), 1))
+        dc.DrawCircle(fx, fy, 5)
+
+
 class PointListPanel(wx.Panel):
     """Ordered list of points synced with the canvas."""
 
@@ -195,8 +280,11 @@ class DecorativeDesignerFrame(wx.Frame):
             on_points_changed=self._on_points_changed,
         )
 
+        self.preview = PatternPreviewPanel(main_panel)
+
         main_sizer.Add(self.list_panel, 0, wx.EXPAND | wx.ALL, 5)
         main_sizer.Add(self.canvas, 1, wx.EXPAND | wx.ALL, 5)
+        main_sizer.Add(self.preview, 1, wx.EXPAND | wx.ALL, 5)
 
         main_panel.SetSizer(main_sizer)
 
@@ -205,12 +293,14 @@ class DecorativeDesignerFrame(wx.Frame):
         self.SetSizer(frame_sizer)
 
         self.list_panel.set_points(self.canvas.points)
+        self.preview.set_points(self.canvas.points)
 
         self.Fit()
         self.Layout()
 
     def _on_points_changed(self, points, selected_index):
         self.list_panel.set_points(points, selected_index)
+        self.preview.set_points(points)
 
     def _on_list_selection(self, index):
         self.canvas.set_selected(index)
