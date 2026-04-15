@@ -3,11 +3,55 @@
 # Copyright (c) 2026 Authors
 # Licensed under the GNU GPL version 3.0 or later.  See the file LICENSE for details.
 
+import json
 import math
+import os
+import re
 
 import wx
 
 from ..i18n import _
+from ..utils.paths import get_resource_dir, get_user_dir
+
+BUNDLED_PATTERNS_DIR = get_resource_dir('decorative_patterns')
+USER_PATTERNS_DIR = get_user_dir('decorative_patterns', create=False)
+
+
+def _name_from_path(path):
+    return os.path.splitext(os.path.basename(path))[0]
+
+
+def _list_patterns():
+    """Return list of (display_name, path, is_bundled) for all known patterns."""
+    patterns = []
+    for directory, is_bundled in [(BUNDLED_PATTERNS_DIR, True), (USER_PATTERNS_DIR, False)]:
+        if not os.path.isdir(directory):
+            continue
+        for filename in sorted(os.listdir(directory)):
+            if not filename.endswith('.json'):
+                continue
+            path = os.path.join(directory, filename)
+            patterns.append((_name_from_path(path), path, is_bundled))
+    return patterns
+
+
+def _load_pattern_file(path):
+    with open(path) as f:
+        data = json.load(f)
+    return _name_from_path(path), [(float(p[0]), float(p[1])) for p in data['points']]
+
+
+def _save_pattern_file(name, points):
+    os.makedirs(USER_PATTERNS_DIR, exist_ok=True)
+    filename = re.sub(r'[\\/:*?"<>|]', '_', name).strip() + '.json'
+    path = os.path.join(USER_PATTERNS_DIR, filename)
+    with open(path, 'w') as f:
+        json.dump({'points': [[x, y] for x, y in points]}, f, indent=2)
+    return path
+
+
+def _delete_pattern_file(path):
+    os.remove(path)
 
 HIT_RADIUS = 8
 
@@ -321,9 +365,37 @@ class DecorativeDesignerFrame(wx.Frame):
             _("Decorative Stitch Designer"),
             style=wx.DEFAULT_FRAME_STYLE | (wx.FRAME_FLOAT_ON_PARENT if parent else 0),
         )
-        self.SetMinSize((620, 380))
+        self.SetMinSize((700, 420))
+        self._patterns = []  # (name, path, is_bundled)
 
-        main_panel = wx.Panel(self)
+        outer = wx.Panel(self)
+        outer_sizer = wx.BoxSizer(wx.VERTICAL)
+
+        # ── toolbar ──────────────────────────────────────────────────────────
+        toolbar = wx.Panel(outer)
+        tb_sizer = wx.BoxSizer(wx.HORIZONTAL)
+
+        tb_sizer.Add(wx.StaticText(toolbar, label=_("Load:")), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 5)
+        self.pattern_choice = wx.Choice(toolbar)
+        tb_sizer.Add(self.pattern_choice, 1, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+
+        tb_sizer.Add(wx.StaticText(toolbar, label=_("Name:")), 0, wx.ALIGN_CENTER_VERTICAL | wx.LEFT, 10)
+        self.name_ctrl = wx.TextCtrl(toolbar, size=(140, -1))
+        tb_sizer.Add(self.name_ctrl, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+
+        self.new_btn = wx.Button(toolbar, label=_("New"))
+        self.save_btn = wx.Button(toolbar, label=_("Save"))
+        self.delete_btn = wx.Button(toolbar, label=_("Delete"))
+        tb_sizer.Add(self.new_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+        tb_sizer.Add(self.save_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+        tb_sizer.Add(self.delete_btn, 0, wx.ALIGN_CENTER_VERTICAL | wx.ALL, 4)
+
+        toolbar.SetSizer(tb_sizer)
+        outer_sizer.Add(toolbar, 0, wx.EXPAND | wx.ALL, 2)
+        outer_sizer.Add(wx.StaticLine(outer), 0, wx.EXPAND)
+
+        # ── main area ────────────────────────────────────────────────────────
+        main_panel = wx.Panel(outer)
         main_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         self.list_panel = PointListPanel(
@@ -331,29 +403,114 @@ class DecorativeDesignerFrame(wx.Frame):
             on_selection_changed=self._on_list_selection,
             on_coord_changed=self._on_coord_changed,
         )
-
         self.canvas = DesignerCanvas(
             main_panel,
             on_points_changed=self._on_points_changed,
         )
-
         self.preview = PatternPreviewPanel(main_panel)
 
         main_sizer.Add(self.list_panel, 0, wx.EXPAND | wx.ALL, 5)
         main_sizer.Add(self.canvas, 1, wx.EXPAND | wx.ALL, 5)
         main_sizer.Add(self.preview, 1, wx.EXPAND | wx.ALL, 5)
-
         main_panel.SetSizer(main_sizer)
 
+        outer_sizer.Add(main_panel, 1, wx.EXPAND)
+        outer.SetSizer(outer_sizer)
+
         frame_sizer = wx.BoxSizer(wx.VERTICAL)
-        frame_sizer.Add(main_panel, 1, wx.EXPAND)
+        frame_sizer.Add(outer, 1, wx.EXPAND)
         self.SetSizer(frame_sizer)
 
+        self._refresh_pattern_list()
         self.list_panel.set_points(self.canvas.points)
         self.preview.set_points(self.canvas.points)
 
+        self.pattern_choice.Bind(wx.EVT_CHOICE, self._on_load)
+        self.new_btn.Bind(wx.EVT_BUTTON, self._on_new)
+        self.save_btn.Bind(wx.EVT_BUTTON, self._on_save)
+        self.delete_btn.Bind(wx.EVT_BUTTON, self._on_delete)
+        self.delete_btn.Enable(False)
+
         self.Fit()
         self.Layout()
+
+    def _refresh_pattern_list(self, select_path=None):
+        self._patterns = _list_patterns()
+        self.pattern_choice.Clear()
+        self.pattern_choice.Append(_("— select pattern —"), None)
+        for name, path, is_bundled in self._patterns:
+            label = f"{name}  ({'built-in' if is_bundled else 'saved'})"
+            self.pattern_choice.Append(label, path)
+        self.pattern_choice.SetSelection(0)
+        if select_path:
+            for i, (_name, path, _bundled) in enumerate(self._patterns):
+                if path == select_path:
+                    self.pattern_choice.SetSelection(i + 1)
+                    break
+        self.delete_btn.Enable(False)
+
+    def _reset_canvas(self):
+        self.canvas.points = [(200.0, 50.0), (200.0, 250.0)]
+        self.canvas.selected_index = None
+        self.canvas.dragging_index = None
+        self.canvas.Refresh()
+        self.list_panel.set_points(self.canvas.points)
+        self.preview.set_points(self.canvas.points)
+
+    def _on_new(self, event):
+        self.pattern_choice.SetSelection(0)
+        self.name_ctrl.SetValue("")
+        self.delete_btn.Enable(False)
+        self._reset_canvas()
+
+    def _on_load(self, event):
+        idx = self.pattern_choice.GetSelection()
+        if idx <= 0:
+            self.delete_btn.Enable(False)
+            return
+        path = self.pattern_choice.GetClientData(idx)
+        name, points = _load_pattern_file(path)
+        self.canvas.points = points
+        self.canvas.selected_index = None
+        self.canvas.dragging_index = None
+        self.canvas.Refresh()
+        self.name_ctrl.SetValue(name)
+        self.list_panel.set_points(points)
+        self.preview.set_points(points)
+        _pname, _ppath, is_bundled = self._patterns[idx - 1]
+        self.delete_btn.Enable(not is_bundled)
+
+    def _on_save(self, event):
+        name = self.name_ctrl.GetValue().strip()
+        if not name:
+            wx.MessageBox(_("Please enter a pattern name."), _("Save Pattern"), wx.OK | wx.ICON_WARNING)
+            return
+        # Check for an existing user pattern with the same name
+        existing = [(n, p) for n, p, bundled in self._patterns if not bundled and n == name]
+        if existing:
+            if wx.MessageBox(
+                _("A saved pattern named '{}' already exists. Overwrite it?").format(name),
+                _("Save Pattern"), wx.YES_NO | wx.ICON_QUESTION
+            ) != wx.YES:
+                return
+        path = _save_pattern_file(name, self.canvas.points)
+        self._refresh_pattern_list(select_path=path)
+        self.delete_btn.Enable(True)
+
+    def _on_delete(self, event):
+        idx = self.pattern_choice.GetSelection()
+        if idx <= 0:
+            return
+        _pname, _ppath, is_bundled = self._patterns[idx - 1]
+        if is_bundled:
+            return
+        path = self.pattern_choice.GetClientData(idx)
+        if wx.MessageBox(
+            _("Delete this pattern?"), _("Delete Pattern"),
+            wx.YES_NO | wx.ICON_QUESTION
+        ) == wx.YES:
+            _delete_pattern_file(path)
+            self._refresh_pattern_list()
 
     def _on_points_changed(self, points, selected_index):
         self.list_panel.set_points(points, selected_index)
