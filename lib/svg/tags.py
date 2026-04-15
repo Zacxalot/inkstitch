@@ -120,6 +120,7 @@ inkstitch_attribs = [
     'canvas_grid_origin',
     # stroke
     'stroke_method',
+    'decorative_pattern_select',
     'bean_stitch_repeats',
     'repeats',
     'running_stitch_length_mm',

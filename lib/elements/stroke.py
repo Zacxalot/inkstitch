@@ -75,6 +75,7 @@ class Stroke(EmbroideryElement):
         ParamOption("running_stitch", _("Running Stitch / Bean Stitch")),
         ParamOption("ripple_stitch", _("Ripple Stitch")),
         ParamOption("zigzag_stitch", _("ZigZag Stitch")),
+        ParamOption("decorative_stitch", _("Decorative Stitch")),
         ParamOption("manual_stitch", _("Manual Stitch")),
     ]
 
@@ -90,6 +91,25 @@ class Stroke(EmbroideryElement):
     def stroke_method(self):
         """Return the stroke method."""
         return self.get_param("stroke_method", "running_stitch")
+    
+    _decorative_patterns = [
+        ParamOption("chevron_pattern", _("Chevron")),
+    ]
+
+    @property
+    @param(
+        "decorative_pattern_select",
+        _("Pattern"),
+        type="combo",
+        select_items=[("stroke_method", "decorative_stitch")],
+        default=0,
+        options=_decorative_patterns,
+        sort_index=0,
+    )
+    def decorative_pattern_select(self):
+        """Return the decorative pattern."""
+        return self.get_param("decorative_pattern_select", "chevron_pattern")
+
 
     @property
     @param(
@@ -751,6 +771,24 @@ class Stroke(EmbroideryElement):
             return shgeo.Point(*command.target_point)
         else:
             return self.unclipped_shape.centroid
+    
+    def decorative_pattern(self, path, stitch_length):
+        # Generate running stitches for a SINGLE pass (no repeats)
+        single_pass_stitches = running_stitch(
+            path,
+            stitch_length,
+            self.running_stitch_tolerance,
+            False,  # enable_random_stitch_length
+            0,  # random_sigma
+            "",  # random_seed
+        )
+
+        return StitchGroup(
+            self.color,
+            stitches=single_pass_stitches,
+            lock_stitches=self.lock_stitches,
+            force_lock_stitches=self.force_lock_stitches,
+        )
 
     def simple_satin(self, path, zigzag_spacing, stroke_width, pull_compensation, zigzag_angle=0):
         """Generate zig-zag along the path at the specified spacing and width.
@@ -920,6 +958,13 @@ class Stroke(EmbroideryElement):
                     )
                     # apply bean stitch settings
                     stitch_group.stitches = self.do_bean_repeats(stitch_group.stitches)
+                # decorative stitch
+                elif self.stroke_method == "decorative_stitch":
+                    stitch_group = self.decorative_pattern(
+                        path,
+                        self.running_stitch_length
+                    )
+                    pass
                 # simple satin
                 elif self.stroke_method == "zigzag_stitch":
                     stitch_group = self.simple_satin(
