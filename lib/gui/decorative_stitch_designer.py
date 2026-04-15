@@ -222,10 +222,13 @@ class PatternPreviewPanel(wx.Panel):
 class PointListPanel(wx.Panel):
     """Ordered list of points synced with the canvas."""
 
-    def __init__(self, parent, on_selection_changed=None):
+    def __init__(self, parent, on_selection_changed=None, on_coord_changed=None):
         super().__init__(parent)
         self.SetMinSize((180, -1))
         self.on_selection_changed = on_selection_changed
+        self.on_coord_changed = on_coord_changed
+        self._points = []
+        self._updating = False
 
         sizer = wx.BoxSizer(wx.VERTICAL)
 
@@ -236,10 +239,32 @@ class PointListPanel(wx.Panel):
         self.listbox.Bind(wx.EVT_LISTBOX, self._on_select)
         sizer.Add(self.listbox, 1, wx.EXPAND | wx.ALL, 5)
 
+        coord_grid = wx.FlexGridSizer(rows=2, cols=2, hgap=5, vgap=4)
+        coord_grid.AddGrowableCol(1)
+        coord_grid.Add(wx.StaticText(self, label="X:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.x_ctrl = wx.SpinCtrlDouble(self, min=-9999, max=9999, inc=1)
+        self.x_ctrl.SetDigits(1)
+        coord_grid.Add(self.x_ctrl, 1, wx.EXPAND)
+        coord_grid.Add(wx.StaticText(self, label="Y:"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.y_ctrl = wx.SpinCtrlDouble(self, min=-9999, max=9999, inc=1)
+        self.y_ctrl.SetDigits(1)
+        coord_grid.Add(self.y_ctrl, 1, wx.EXPAND)
+        sizer.Add(coord_grid, 0, wx.EXPAND | wx.ALL, 5)
+
+        self.x_ctrl.Bind(wx.EVT_SPINCTRLDOUBLE, self._on_coord_edit)
+        self.y_ctrl.Bind(wx.EVT_SPINCTRLDOUBLE, self._on_coord_edit)
+        self.x_ctrl.Bind(wx.EVT_TEXT_ENTER, self._on_coord_edit)
+        self.y_ctrl.Bind(wx.EVT_TEXT_ENTER, self._on_coord_edit)
+
+        self.x_ctrl.Enable(False)
+        self.y_ctrl.Enable(False)
+
         self.SetSizer(sizer)
 
     def set_points(self, points, selected_index=None):
+        self._points = list(points)
         current_selection = self.listbox.GetSelection()
+        self._updating = True
         self.listbox.Clear()
         for i, (x, y) in enumerate(points):
             self.listbox.Append(f"{i}: ({x:.1f}, {y:.1f})")
@@ -247,11 +272,42 @@ class PointListPanel(wx.Panel):
             self.listbox.SetSelection(selected_index)
         elif current_selection != wx.NOT_FOUND and current_selection < len(points):
             self.listbox.SetSelection(current_selection)
+            selected_index = current_selection
+        self._updating = False
+        self._update_coord_fields(selected_index)
+
+    def _update_coord_fields(self, index):
+        last = len(self._points) - 1
+        is_anchor = index is None or index == 0 or index == last
+        if index is not None and 0 <= index < len(self._points):
+            x, y = self._points[index]
+            self._updating = True
+            self.x_ctrl.SetValue(x)
+            self.y_ctrl.SetValue(y)
+            self._updating = False
+        self.x_ctrl.Enable(not is_anchor)
+        self.y_ctrl.Enable(not is_anchor)
 
     def _on_select(self, event):
         idx = self.listbox.GetSelection()
-        if idx != wx.NOT_FOUND and self.on_selection_changed:
-            self.on_selection_changed(idx)
+        if idx != wx.NOT_FOUND:
+            self._update_coord_fields(idx)
+            if self.on_selection_changed:
+                self.on_selection_changed(idx)
+
+    def _on_coord_edit(self, event):
+        if self._updating:
+            return
+        idx = self.listbox.GetSelection()
+        if idx == wx.NOT_FOUND:
+            return
+        last = len(self._points) - 1
+        if idx == 0 or idx == last:
+            return
+        x = self.x_ctrl.GetValue()
+        y = self.y_ctrl.GetValue()
+        if self.on_coord_changed:
+            self.on_coord_changed(idx, x, y)
 
 
 class DecorativeDesignerFrame(wx.Frame):
@@ -273,6 +329,7 @@ class DecorativeDesignerFrame(wx.Frame):
         self.list_panel = PointListPanel(
             main_panel,
             on_selection_changed=self._on_list_selection,
+            on_coord_changed=self._on_coord_changed,
         )
 
         self.canvas = DesignerCanvas(
@@ -304,6 +361,12 @@ class DecorativeDesignerFrame(wx.Frame):
 
     def _on_list_selection(self, index):
         self.canvas.set_selected(index)
+
+    def _on_coord_changed(self, index, x, y):
+        self.canvas.points[index] = (x, y)
+        self.canvas.Refresh()
+        self.list_panel.set_points(self.canvas.points, index)
+        self.preview.set_points(self.canvas.points)
 
 
 def open_decorative_designer():
