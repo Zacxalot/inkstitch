@@ -10,10 +10,11 @@ from math import ceil
 import shapely.geometry as shgeo
 from shapely.errors import GEOSException
 
-from ..gui.decorative_stitch_designer import open_decorative_designer
+from ..gui.decorative_stitch_designer import _list_patterns, _load_pattern_file, open_decorative_designer
 from ..i18n import _
 from ..marker import get_marker_elements
 from ..stitch_plan import StitchGroup
+from ..stitches.decorative_stitch import decorative_stitch
 from ..stitches.ripple_stitch import ripple_stitch
 from ..stitches.running_stitch import bean_stitch, running_stitch, zigzag_stitch
 from ..threads import ThreadColor
@@ -42,6 +43,19 @@ class TooNarrowSatinWarning(ValidationWarning):
           "width. The stroke width has to be wider than the preference setting, otherwise this element will be treated as a running stitch. To not "
           "produce hard stitches, it is recommended to only use satins wider than 1mm."),
     ]
+
+
+def _build_decorative_patterns():
+    import os
+    patterns = []
+    try:
+        for name, path, is_bundled in _list_patterns():
+            stem = os.path.splitext(os.path.basename(path))[0]
+            label = name if is_bundled else _("{} (saved)").format(name)
+            patterns.append(ParamOption(stem, label))
+    except Exception:
+        pass
+    return patterns
 
 
 class Stroke(EmbroideryElement):
@@ -93,9 +107,7 @@ class Stroke(EmbroideryElement):
         """Return the stroke method."""
         return self.get_param("stroke_method", "running_stitch")
     
-    _decorative_patterns = [
-        ParamOption("chevron_pattern", _("Chevron")),
-    ]
+    _decorative_patterns = _build_decorative_patterns()
 
     @property
     @param(
@@ -105,11 +117,11 @@ class Stroke(EmbroideryElement):
         select_items=[("stroke_method", "decorative_stitch")],
         default=0,
         options=_decorative_patterns,
-        sort_index=0,
+        sort_index=1,
     )
     def decorative_pattern_select(self):
         """Return the decorative pattern."""
-        return self.get_param("decorative_pattern_select", "chevron_pattern")
+        return self.get_param("decorative_pattern_select", None)
 
     @property
     @param(
@@ -118,7 +130,7 @@ class Stroke(EmbroideryElement):
         type="button",
         select_items=[("stroke_method", "decorative_stitch")],
         button_handler=lambda nodes: open_decorative_designer(),
-        sort_index=1,
+        sort_index=2,
     )
     def decorative_pattern_edit(self):
         """Button to open the decorative stitch designer."""
@@ -786,22 +798,33 @@ class Stroke(EmbroideryElement):
             return self.unclipped_shape.centroid
     
     def decorative_pattern(self, path, stitch_length):
-        # Generate running stitches for a SINGLE pass (no repeats)
-        single_pass_stitches = running_stitch(
-            path,
-            stitch_length,
-            self.running_stitch_tolerance,
-            False,  # enable_random_stitch_length
-            0,  # random_sigma
-            "",  # random_seed
-        )
+        pattern_points = self._load_decorative_pattern()
+        if pattern_points is not None:
+            stitches = decorative_stitch(path, pattern_points, stitch_length, self.running_stitch_tolerance)
+        else:
+            stitches = running_stitch(path, stitch_length, self.running_stitch_tolerance, False, 0, "")
 
         return StitchGroup(
             self.color,
-            stitches=single_pass_stitches,
+            stitches=stitches,
             lock_stitches=self.lock_stitches,
             force_lock_stitches=self.force_lock_stitches,
         )
+
+    def _load_decorative_pattern(self):
+        """Return the selected pattern's points, or None if not found."""
+        import os
+        stem = self.decorative_pattern_select
+        if not stem:
+            return None
+        for _pname, ppath, _bundled in _list_patterns():
+            if os.path.splitext(os.path.basename(ppath))[0] == stem:
+                try:
+                    _n, points = _load_pattern_file(ppath)
+                    return points
+                except Exception:
+                    return None
+        return None
 
     def simple_satin(self, path, zigzag_spacing, stroke_width, pull_compensation, zigzag_angle=0):
         """Generate zig-zag along the path at the specified spacing and width.
